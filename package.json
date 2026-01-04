@@ -1,0 +1,64 @@
+{
+  "name": "tunic",
+  "author": "Javier Rizzo",
+  "version": "1.0.0",
+  "keywords": [
+    "pebble",
+    "watchface",
+    "tunic",
+    "isometricorp",
+    "fox",
+    "sword",
+    "metrodbrania",
+    "metroidvania",
+    "game",
+    "videogame",
+    "digital"
+  ],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "TUNIC",
+    "uuid": "c26d5664-a8bb-4333-aaa7-3e2c245539a1",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "dummy"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "ODIN_ROUNDED_BOLD_33",
+          "file": "odin_rounded_bold.ttf"
+        },
+        {
+          "type": "font",
+          "name": "ODIN_ROUNDED_BOLD_45",
+          "file": "odin_rounded_bold.ttf"
+        },
+        {
+          "type": "bitmap",
+          "name": "FOX",
+          "file": "fox.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BORDER",
+          "file": "border.png"
+        }
+      ]
+    }
+  }
+}
