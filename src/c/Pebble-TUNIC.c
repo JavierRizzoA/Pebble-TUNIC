@@ -1,5 +1,8 @@
 #include <pebble.h>
 
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+
 static Window *window;
 static Layer *background_layer;
 static GFont font;
@@ -9,6 +12,201 @@ static BitmapLayer *border_layer;
 static GBitmap *border_bitmap;
 static TextLayer *time_shadow_layer;
 static TextLayer *time_layer;
+static Layer *bars_layer;
+
+
+enum BarColor {
+  RED,
+  GREEN,
+  BLUE,
+  BW
+};
+
+
+static void byte_set_bit(uint8_t *byte, uint8_t bit, uint8_t value) {
+  *byte ^= (-value ^ *byte) & (1 << bit);
+}
+
+static void set_pixel_color(GBitmapDataRowInfo info, GPoint point, GColor color) {
+#if defined(PBL_COLOR)
+  // Write the pixel's byte color
+  memset(&info.data[point.x], color.argb, 1);
+#elif defined(PBL_BW)
+  // Find the correct byte, then set the appropriate bit
+  uint8_t byte = point.x / 8;
+  uint8_t bit = point.x % 8;
+  byte_set_bit(&info.data[byte], bit, gcolor_equal(color, GColorWhite) ? 1 : 0);
+#endif
+}
+
+static void set_pixel_color_scaled(GBitmap *fb, GPoint origin, GPoint relative_pixel, int scale, GColor color) {
+  int min_x = origin.x + relative_pixel.x * scale;
+  int max_x = origin.x + relative_pixel.x * scale + scale;
+  int min_y = origin.y + relative_pixel.y * scale;
+  int max_y = origin.y + relative_pixel.y * scale + scale;
+
+  for (int y = min_y; y < max_y; y++) {
+    GBitmapDataRowInfo info = gbitmap_get_data_row_info(fb, y);
+    for (int x = min_x; x < max_x; x++) {
+      set_pixel_color(info, GPoint(x, y), color);
+    }
+  }
+}
+
+static void draw_filled_bar_top(GBitmap *fb, GPoint p, GColor color) {
+    GBitmapDataRowInfo row_info = gbitmap_get_data_row_info(fb, p.y);
+    set_pixel_color(row_info, GPoint(p.x, p.y), color);
+    set_pixel_color(row_info, GPoint(p.x + 1, p.y), color);
+
+    row_info = gbitmap_get_data_row_info(fb, p.y - 1);
+    set_pixel_color(row_info, GPoint(p.x, p.y - 1), color);
+    set_pixel_color(row_info, GPoint(p.x + 1, p.y - 1), color);
+    set_pixel_color(row_info, GPoint(p.x - 1, p.y - 1), color);
+    set_pixel_color(row_info, GPoint(p.x + 2, p.y - 1), color);
+
+    row_info = gbitmap_get_data_row_info(fb, p.y - 2);
+    set_pixel_color(row_info, GPoint(p.x, p.y - 2), color);
+    set_pixel_color(row_info, GPoint(p.x + 1, p.y - 2), color);
+    set_pixel_color(row_info, GPoint(p.x - 1, p.y - 2), color);
+    set_pixel_color(row_info, GPoint(p.x + 2, p.y - 2), color);
+
+    row_info = gbitmap_get_data_row_info(fb, p.y - 3);
+    set_pixel_color(row_info, GPoint(p.x, p.y - 3), color);
+    set_pixel_color(row_info, GPoint(p.x + 1, p.y - 3), color);
+}
+
+static void draw_bar_top(GBitmap *fb, GPoint p) {
+  for (int y = p.y; y > p.y - 6; y--) {
+    GBitmapDataRowInfo row_info = gbitmap_get_data_row_info(fb, y);
+    int min_x = p.x - 3 + (p.y - y - 2);
+    int max_x = p.x + 4 - (p.y - y - 2);
+
+    if(y == p.y) {
+      min_x = p.x;
+      max_x = p.x + 1;
+    } else if (y == p.y - 1) {
+      min_x = p.x - 3;
+      max_x = p.x + 4;
+    }
+
+    for (int x = min_x; x <= max_x; x++) {
+      GColor color = GColorBlack;
+      if (y != p.y && (x == min_x || x == max_x)) {
+        color = GColorWhite;
+      }
+
+      set_pixel_color(row_info, GPoint(x, y), color);
+    }
+  }
+}
+
+static void draw_bar(GBitmap *fb, GPoint p, int segments, int fill, enum BarColor bar_color) {
+  fill = MIN(fill, segments * 8);
+
+  GColor left_color;
+  GColor right_color;
+  GColor top_color;
+  switch (bar_color) {
+    case RED:
+      left_color = GColorFashionMagenta;
+      right_color = GColorRichBrilliantLavender;
+      top_color = GColorMelon;
+      break;
+    case GREEN:
+      left_color = GColorGreen;
+      right_color = GColorMediumSpringGreen;
+      top_color = GColorMintGreen;
+      break;
+    case BLUE:
+      left_color = GColorBlue;
+      right_color = GColorVeryLightBlue;
+      top_color = GColorBabyBlueEyes;
+      break;
+    case BW:
+    default:
+      left_color = GColorWhite;
+      right_color = GColorWhite;
+      top_color = GColorWhite;
+      break;
+  }
+
+  for (int s = 0; s < segments; s++) {
+    int y = p.y - s * 10;
+
+    for (int h = 0; h < 10; h++) {
+      y = y - 1;
+      GBitmapDataRowInfo row_info = gbitmap_get_data_row_info(fb, y);
+      GBitmapDataRowInfo upper_row_info = gbitmap_get_data_row_info(fb, y-1);
+
+      if (h == 0) {
+
+//set_pixel_color_scaled(GBitmap *fb, GPoint origin, GPoint relative_pixel, int scale, GColor color) {
+        set_pixel_color_scaled(fb, p, GPoint(0, -h-s*10-1), 2, GColorWhite);
+        set_pixel_color_scaled(fb, p, GPoint(1, -h-s*10-1), 2, GColorWhite);
+        set_pixel_color_scaled(fb, p, GPoint(-1, -h-s*10-2), 2, GColorWhite);
+        set_pixel_color_scaled(fb, p, GPoint(2, -h-s*10-2), 2, GColorWhite);
+
+        if (s != 0) {
+          set_pixel_color_scaled(fb, p, GPoint(-2, -h-s*10-2), 2, GColorBlack);
+          set_pixel_color_scaled(fb, p, GPoint(3, -h-s*10-2), 2, GColorBlack);
+          set_pixel_color_scaled(fb, p, GPoint(-3, -h-s*10-2), 2, GColorWhite);
+          set_pixel_color_scaled(fb, p, GPoint(4, -h-s*10-2), 2, GColorWhite);
+        }
+      } else if (h == 1) {
+        set_pixel_color_scaled(fb, p, GPoint(0, -h-s*10-1), 2, GColorBlack);
+        set_pixel_color_scaled(fb, p, GPoint(1, -h-s*10-1), 2, GColorBlack);
+        set_pixel_color_scaled(fb, p, GPoint(-1, -h-s*10-2), 2, GColorBlack);
+        set_pixel_color_scaled(fb, p, GPoint(2, -h-s*10-2), 2, GColorBlack);
+        set_pixel_color_scaled(fb, p, GPoint(-2, -h-s*10-2), 2, GColorWhite);
+        set_pixel_color_scaled(fb, p, GPoint(3, -h-s*10-2), 2, GColorWhite);
+
+        if (s != 0) {
+          set_pixel_color_scaled(fb, p, GPoint(-3, -h-s*10-2), 2, GColorWhite);
+          set_pixel_color_scaled(fb, p, GPoint(4, -h-s*10-2), 2, GColorWhite);
+        }
+      } else {
+        if (fill > s * 8 + h - 2) {
+          set_pixel_color_scaled(fb, p, GPoint(0, -h-s*10-1), 2, left_color);
+          set_pixel_color_scaled(fb, p, GPoint(1, -h-s*10-1), 2, right_color);
+          set_pixel_color_scaled(fb, p, GPoint(-1, -h-s*10-2), 2, left_color);
+          set_pixel_color_scaled(fb, p, GPoint(2, -h-s*10-2), 2, right_color);
+        }
+        else {
+          set_pixel_color_scaled(fb, p, GPoint(0, -h-s*10-1), 2, GColorBlack);
+          set_pixel_color_scaled(fb, p, GPoint(1, -h-s*10-1), 2, GColorBlack);
+          set_pixel_color_scaled(fb, p, GPoint(-1, -h-s*10-2), 2, GColorBlack);
+          set_pixel_color_scaled(fb, p, GPoint(2, -h-s*10-2), 2, GColorBlack);
+        }
+        set_pixel_color_scaled(fb, p, GPoint(-2, -h-s*10-2), 2, GColorBlack);
+        set_pixel_color_scaled(fb, p, GPoint(3, -h-s*10-2), 2, GColorBlack);
+        set_pixel_color_scaled(fb, p, GPoint(-3, -h-s*10-2), 2, GColorWhite);
+        set_pixel_color_scaled(fb, p, GPoint(4, -h-s*10-2), 2, GColorWhite);
+      }
+    }
+  }
+  draw_bar_top(fb, GPoint(p.x, p.y - segments * 10));
+
+  if ((fill / 8) == segments) {
+    draw_filled_bar_top(fb, GPoint(p.x, p.y - ((fill / 8) * 10) - (fill % 8)), top_color);
+  } else if (fill == 0) {
+    draw_filled_bar_top(fb, GPoint(p.x, p.y - 3), top_color);
+  } else if (fill % 8 == 0) {
+    draw_filled_bar_top(fb, GPoint(p.x, p.y - ((fill / 8) * 10 + 2) - 1), top_color);
+  } else {
+    draw_filled_bar_top(fb, GPoint(p.x, p.y - ((fill / 8) * 10 + 2) - (fill % 8)), top_color);
+  }
+}
+
+
+static void bars_update_proc(Layer *layer, GContext *ctx) {
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+
+  draw_bar(fb, GPoint(15, 95), 3, 18, RED);
+  draw_bar(fb, GPoint(35, 95), 2, 13, GREEN);
+  draw_bar(fb, GPoint(55, 95), 1, 8, BLUE);
+
+  graphics_release_frame_buffer(ctx, fb);
+}
 
 static void update_time() {
   static char buffer[8];
@@ -115,6 +313,10 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(time_layer, GTextAlignmentCenter);
   layer_add_child(window_layer, text_layer_get_layer(time_layer));
 
+  bars_layer = layer_create(bounds);
+  layer_set_update_proc(bars_layer, bars_update_proc);
+  layer_add_child(window_layer, bars_layer);
+
   update_time();
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
@@ -132,6 +334,8 @@ static void window_unload(Window *window) {
   text_layer_destroy(time_layer);
   text_layer_destroy(time_shadow_layer);
   fonts_unload_custom_font(font);
+
+  layer_destroy(bars_layer);
 }
 
 static void init(void) {
